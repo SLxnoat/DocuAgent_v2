@@ -1,6 +1,6 @@
-"""LangGraph Multi-Agent Documentation Pipeline."""
+"""Multi-Agent Documentation Pipelines for DocuAgent AI."""
 
-from app.agents.graph import create_documentation_graph, get_compiled_graph
-from app.agents.state import DocuAgentState
+from app.agents.base import BaseAgentPipeline
 
-__all__ = ["create_documentation_graph", "get_compiled_graph", "DocuAgentState"]
+__all__ = ["BaseAgentPipeline"]
+

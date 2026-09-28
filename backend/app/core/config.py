@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
+    # Multi-Agent Orchestration Stack
+    AGENT_ORCHESTRATOR: str = "hybrid"  # hybrid, crewai, langgraph
+    CREWAI_PROCESS_MODE: str = "sequential"  # sequential, hierarchical
+    MAX_REVISION_LOOPS: int = 3
+    QUALITY_THRESHOLD_SCORE: int = 85
+
     # LLM & Multi-Agent Stack
     LLM_PROVIDER: str = "ollama_local"  # ollama_cloud, ollama_local, openai, litellm
     OLLAMA_BASE_URL: str = "http://localhost:11434"
