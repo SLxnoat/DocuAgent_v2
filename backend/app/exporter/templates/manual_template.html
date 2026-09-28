@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ document.title }}</title>
+    <style>
+        {{ css_styles }}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>{{ document.title }}</h1>
+        <div class="doc-meta">
+            <span><strong>Target:</strong> {{ target_url }}</span> | 
+            <span><strong>Generated:</strong> {{ generated_date }}</span> |
+            <span><strong>Quality Score:</strong> {{ document.quality_report.score | default(95) }}%</span>
+        </div>
+    </header>
+
+    {% if document.executive_summary %}
+    <div class="executive-summary">
+        <h2>Executive Summary</h2>
+        <p>{{ document.executive_summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if document.prerequisites and document.prerequisites|length > 0 %}
+    <div class="prerequisites">
+        <h3>Prerequisites</h3>
+        <ul>
+            {% for req in document.prerequisites %}
+            <li>{{ req }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="steps-container">
+        <h2>Step-by-Step Walkthrough</h2>
+        {% for step in document.steps %}
+        <div class="step-card">
+            <div class="step-header">
+                <span class="step-badge">Step {{ step.step_number }}</span>
+                <span class="step-title">{{ step.title }}</span>
+            </div>
+            <div class="step-instruction">
+                <p>{{ step.instruction }}</p>
+                {% if step.detailed_description %}
+                <p><small>{{ step.detailed_description }}</small></p>
+                {% endif %}
+            </div>
+
+            {% if step.screenshot_path and include_screenshots %}
+            <div>
+                <img class="step-screenshot" src="{{ step.screenshot_path }}" alt="Step {{ step.step_number }} visual">
+            </div>
+            {% endif %}
+
+            {% for callout in step.callouts %}
+            <div class="callout callout-{{ callout.type }}">
+                <strong>{{ callout.type | upper }}:</strong> {{ callout.content }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

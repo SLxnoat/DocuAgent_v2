@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # Redis Cache & Message Broker
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: docuagent_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # FastAPI Orchestrator Backend
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: docuagent_backend
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_cloud}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://ollama.com/api}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-llama3.3:70b}
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/docuagent.db
+      - STORAGE_DIR=/app/data/storage
+      - SCREENSHOTS_DIR=/app/data/storage/screenshots
+      - EXPORTS_DIR=/app/data/storage/exports
+    ports:
+      - "8000:8000"
+    volumes:
+      - docuagent_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Celery Background Worker (Pipeline & PDF Export)
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: docuagent_worker
+    command: celery -A app.workers.celery_app.celery worker --loglevel=info --concurrency=2
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_cloud}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://ollama.com/api}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-llama3.3:70b}
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/docuagent.db
+      - STORAGE_DIR=/app/data/storage
+      - SCREENSHOTS_DIR=/app/data/storage/screenshots
+      - EXPORTS_DIR=/app/data/storage/exports
+    volumes:
+      - docuagent_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # React Frontend (SPA)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: docuagent_frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  docuagent_data:
