@@ -3,13 +3,14 @@ import { Header } from './Header';
 import { ControlPane } from '../control-pane/ControlPane';
 import { WorkspacePane } from '../workspace-pane/WorkspacePane';
 import { ChatPane } from '../chat-pane/ChatPane';
+import { SettingsModal } from '../settings/SettingsModal';
 import { useUIStore } from '../../store/uiStore';
 
 export const AppLayout: React.FC = () => {
   const { isControlPaneCollapsed, isChatPaneCollapsed } = useUIStore();
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden relative">
       <Header />
       <div className="flex-1 flex overflow-hidden">
         {/* Left Control Pane */}
@@ -31,6 +32,9 @@ export const AppLayout: React.FC = () => {
           </aside>
         )}
       </div>
+
+      {/* Global Settings & Live Integrator Modal */}
+      <SettingsModal />
     </div>
   );
 };

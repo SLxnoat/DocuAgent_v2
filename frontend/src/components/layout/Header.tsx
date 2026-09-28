@@ -1,13 +1,16 @@
 import React from 'react';
-import { Eye, Sparkles, LayoutPanelLeft, MessageSquare, SplitSquareVertical, Globe, RefreshCw } from 'lucide-react';
+import { Eye, Sparkles, LayoutPanelLeft, MessageSquare, Globe, Settings } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useDocumentStore } from '../../store/documentStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { ModelPulseBadge } from '../common/ModelPulseBadge';
 
 export const Header: React.FC = () => {
   const { viewMode, setViewMode, toggleControlPane, toggleChatPane } = useUIStore();
   const { currentSession, isRecording } = useSessionStore();
   const { currentDocument } = useDocumentStore();
+  const { openSettingsModal } = useSettingsStore();
 
   return (
     <header className="h-14 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 flex items-center justify-between z-20">
@@ -75,8 +78,11 @@ export const Header: React.FC = () => {
         </button>
       </div>
 
-      {/* Right Quick Actions */}
-      <div className="flex items-center space-x-2">
+      {/* Right Quick Actions & Live Model Integrator Pulse */}
+      <div className="flex items-center space-x-2.5">
+        {/* Model Live Pulse */}
+        <ModelPulseBadge />
+
         {isRecording && (
           <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-red-950/40 border border-red-800/50 rounded-full text-xs font-semibold text-red-400 animate-pulse">
             <div className="w-2 h-2 rounded-full bg-red-500" />
@@ -91,12 +97,21 @@ export const Header: React.FC = () => {
           </div>
         )}
 
+        {/* Settings Modal Button */}
+        <button
+          onClick={openSettingsModal}
+          title="Open Settings & Integrator Config"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+
         <button
           onClick={toggleChatPane}
           title="Toggle Human-in-the-loop Chat"
           className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
         >
-          <MessageSquare className="w-5 h-5" />
+          <MessageSquare className="w-4 h-4" />
         </button>
       </div>
     </header>

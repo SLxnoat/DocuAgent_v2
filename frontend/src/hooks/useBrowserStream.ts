@@ -6,6 +6,8 @@ interface UseBrowserStreamProps {
 
 export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+  const [currentUrl, setCurrentUrl] = useState<string>('');
+  const [pageTitle, setPageTitle] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -16,6 +18,8 @@ export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
         socketRef.current = null;
       }
       setCurrentFrame(null);
+      setCurrentUrl('');
+      setPageTitle('');
       setIsConnected(false);
       return;
     }
@@ -34,6 +38,12 @@ export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
         const payload = JSON.parse(event.data);
         if (payload.type === 'screencast_frame' && payload.data) {
           setCurrentFrame(`data:image/jpeg;base64,${payload.data}`);
+          if (payload.metadata?.url) {
+            setCurrentUrl(payload.metadata.url);
+          }
+          if (payload.metadata?.title) {
+            setPageTitle(payload.metadata.title);
+          }
         }
       } catch (err) {
         console.error('Failed to parse screencast packet:', err);
@@ -50,7 +60,14 @@ export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
   }, [sessionId]);
 
   const sendMouseEvent = useCallback(
-    (event: 'click' | 'mousePressed' | 'mouseReleased' | 'mouseMoved', x: number, y: number, button = 'left') => {
+    (
+      event: 'click' | 'dblclick' | 'mousePressed' | 'mouseReleased' | 'mouseMoved' | 'wheel',
+      x: number,
+      y: number,
+      button = 'left',
+      deltaX = 0,
+      deltaY = 0
+    ) => {
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
         socketRef.current.send(
           JSON.stringify({
@@ -59,7 +76,9 @@ export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
             x,
             y,
             button,
-            clickCount: 1,
+            clickCount: event === 'dblclick' ? 2 : 1,
+            deltaX,
+            deltaY,
           })
         );
       }
@@ -67,23 +86,62 @@ export const useBrowserStream = ({ sessionId }: UseBrowserStreamProps) => {
     []
   );
 
-  const sendKeyboardEvent = useCallback((event: 'keyDown' | 'keyUp' | 'type', key: string, text?: string) => {
+  const sendKeyboardEvent = useCallback(
+    (event: 'keyDown' | 'keyUp' | 'type' | 'press', key: string, text?: string) => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(
+          JSON.stringify({
+            type: 'keyboard',
+            event,
+            key,
+            text,
+          })
+        );
+      }
+    },
+    []
+  );
+
+  const sendNavigation = useCallback((url: string) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(
         JSON.stringify({
-          type: 'keyboard',
-          event,
-          key,
-          text,
+          type: 'navigate',
+          url,
         })
       );
     }
   }, []);
 
+  const sendReload = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'reload' }));
+    }
+  }, []);
+
+  const sendGoBack = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'goBack' }));
+    }
+  }, []);
+
+  const sendGoForward = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'goForward' }));
+    }
+  }, []);
+
   return {
     currentFrame,
+    currentUrl,
+    pageTitle,
     isConnected,
     sendMouseEvent,
     sendKeyboardEvent,
+    sendNavigation,
+    sendReload,
+    sendGoBack,
+    sendGoForward,
   };
 };
+

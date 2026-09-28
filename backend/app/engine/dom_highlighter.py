@@ -76,15 +76,31 @@ class DOMHighlighter:
                 return parts.join(' > ');
             }}
 
+            function isSensitiveInput(el) {{
+                if (!el || !(el instanceof Element)) return false;
+                const type = (el.getAttribute('type') || '').toLowerCase();
+                const name = (el.getAttribute('name') || '').toLowerCase();
+                const id = (el.id || '').toLowerCase();
+                const autocomplete = (el.getAttribute('autocomplete') || '').toLowerCase();
+                return type === 'password' || 
+                       name.includes('password') || 
+                       name.includes('secret') || 
+                       name.includes('token') ||
+                       name.includes('cvv') ||
+                       id.includes('password') ||
+                       autocomplete.includes('password');
+            }}
+
             function extractElementData(el) {{
                 if (!el || !(el instanceof Element)) return null;
                 const rect = el.getBoundingClientRect();
+                const sensitive = isSensitiveInput(el);
                 return {{
                     tag_name: el.tagName.toLowerCase(),
                     element_id: el.id || null,
                     class_names: Array.from(el.classList).filter(c => c !== '{cls.HIGHLIGHT_CLASS}'),
                     css_selector: getCssSelector(el),
-                    inner_text: (el.innerText || el.textContent || '').trim().substring(0, 150),
+                    inner_text: sensitive ? '••••••••' : (el.innerText || el.textContent || '').trim().substring(0, 150),
                     placeholder: el.getAttribute('placeholder') || null,
                     aria_label: el.getAttribute('aria-label') || null,
                     role: el.getAttribute('role') || null,
@@ -101,7 +117,7 @@ class DOMHighlighter:
                     }},
                     attributes: {{
                         name: el.getAttribute('name') || '',
-                        value: el.value || '',
+                        value: sensitive ? '••••••••' : (el.value || ''),
                         title: el.getAttribute('title') || ''
                     }}
                 }};
@@ -122,10 +138,11 @@ class DOMHighlighter:
             document.addEventListener('input', (e) => {{
                 highlightElement(e.target);
                 if (window.__docuagent_on_action) {{
+                    const sensitive = isSensitiveInput(e.target);
                     window.__docuagent_on_action({{
                         action_type: 'input',
                         target: extractElementData(e.target),
-                        input_value: e.target.value,
+                        input_value: sensitive ? '••••••••' : e.target.value,
                         timestamp: new Date().toISOString()
                     }});
                 }}
@@ -134,10 +151,11 @@ class DOMHighlighter:
             document.addEventListener('change', (e) => {{
                 highlightElement(e.target);
                 if (window.__docuagent_on_action) {{
+                    const sensitive = isSensitiveInput(e.target);
                     window.__docuagent_on_action({{
                         action_type: 'change',
                         target: extractElementData(e.target),
-                        input_value: e.target.value,
+                        input_value: sensitive ? '••••••••' : e.target.value,
                         timestamp: new Date().toISOString()
                     }});
                 }}

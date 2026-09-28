@@ -1,6 +1,7 @@
 """Intent Parser Node — transforms raw action traces into grouped goals."""
 
 import json
+from datetime import datetime
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.state import DocuAgentState
 from app.agents.llm_factory import LLMFactory
@@ -10,7 +11,10 @@ from app.core.logging import logger
 
 async def intent_parser_node(state: DocuAgentState) -> dict:
     """Analyze raw action traces and structure them into grouped procedural steps."""
-    logger.info(f"Executing Intent Parser Node for session: {state.get('session_id')}")
+    session_id = state.get("session_id", "unknown")
+    directives = state.get("supervisor_directives", "Group raw actions into logical steps.")
+    logger.info(f"Executing Intent Parser Node for session {session_id} with directives: '{directives}'")
+
     traces = state.get("raw_action_traces", [])
     
     if not traces:
@@ -18,6 +22,15 @@ async def intent_parser_node(state: DocuAgentState) -> dict:
         return {
             "workflow_intent": "General Navigation Workflow",
             "grouped_steps": [],
+            "agent_activity_log": [
+                *state.get("agent_activity_log", []),
+                {
+                    "agent": "intent_parser",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "empty_traces",
+                    "steps_grouped": 0,
+                },
+            ],
         }
 
     # Format simplified trace summary for LLM context
@@ -36,24 +49,42 @@ async def intent_parser_node(state: DocuAgentState) -> dict:
         })
 
     llm = LLMFactory.get_chat_model(fast=False)
+    user_content = {
+        "target_url": state.get("target_url"),
+        "supervisor_directives": directives,
+        "action_traces": trace_payload,
+    }
+
     messages = [
         SystemMessage(content=INTENT_PARSER_SYSTEM_PROMPT),
-        HumanMessage(content=f"Target URL: {state.get('target_url')}\nAction Traces:\n{json.dumps(trace_payload, indent=2)}"),
+        HumanMessage(content=f"Intent Parsing Request:\n{json.dumps(user_content, indent=2)}"),
     ]
 
     try:
         response = await llm.ainvoke(messages)
         content = response.content.strip()
-        # Strip potential markdown json formatting
         if content.startswith("```json"):
             content = content.replace("```json", "").replace("```", "").strip()
         elif content.startswith("```"):
             content = content.replace("```", "").strip()
 
         parsed = json.loads(content)
+        intent = parsed.get("workflow_intent", "Automated User Workflow")
+        grouped = parsed.get("grouped_steps", [])
+
         return {
-            "workflow_intent": parsed.get("workflow_intent", "Automated User Workflow"),
-            "grouped_steps": parsed.get("grouped_steps", []),
+            "workflow_intent": intent,
+            "grouped_steps": grouped,
+            "agent_activity_log": [
+                *state.get("agent_activity_log", []),
+                {
+                    "agent": "intent_parser",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "success",
+                    "intent": intent,
+                    "steps_grouped": len(grouped),
+                },
+            ],
         }
     except Exception as e:
         logger.error(f"Intent Parser failed with exception: {e}")
@@ -73,4 +104,13 @@ async def intent_parser_node(state: DocuAgentState) -> dict:
         return {
             "workflow_intent": "User Recorded Workflow",
             "grouped_steps": fallback_steps,
+            "agent_activity_log": [
+                *state.get("agent_activity_log", []),
+                {
+                    "agent": "intent_parser",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "fallback",
+                    "steps_grouped": len(fallback_steps),
+                },
+            ],
         }

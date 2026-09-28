@@ -1,7 +1,7 @@
 """Application Configuration via Pydantic Settings."""
 
 from pathlib import Path
-from typing import List
+from typing import Any, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Server & CORS
     BACKEND_HOST: str = "0.0.0.0"
-    BACKEND_PORT: int = 8000
+    BACKEND_PORT: int = 8030
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -31,10 +31,10 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     # LLM & Multi-Agent Stack
-    LLM_PROVIDER: str = "ollama_cloud"  # ollama_cloud, ollama_local, openai, litellm
-    OLLAMA_BASE_URL: str = "https://ollama.com/api"
+    LLM_PROVIDER: str = "ollama_local"  # ollama_cloud, ollama_local, openai, litellm
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_API_KEY: str = ""
-    DEFAULT_MODEL: str = "llama3.3:70b"
+    DEFAULT_MODEL: str = "qwen2.5:7b"
     FAST_MODEL: str = "llama3.1:8b"
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
@@ -69,3 +69,56 @@ settings = Settings()
 settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 settings.SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def sync_env_file(updates: dict[str, Any]) -> bool:
+    """Safely update or append keys in root .env file.
+
+    Values containing shell-special characters (spaces, colons in URLs,
+    JSON brackets, etc.) are automatically wrapped in double-quotes so
+    the .env file remains valid on re-read.
+    """
+    import re
+
+    env_path = settings.BASE_DIR / ".env"
+    if not env_path.exists():
+        example_path = settings.BASE_DIR / ".env.example"
+        if example_path.exists():
+            env_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            env_path.write_text("# DocuAgent AI Configuration\n", encoding="utf-8")
+
+    def _format_value(val: str) -> str:
+        """Wrap value in double-quotes if it contains special characters."""
+        if val == "":
+            return ""
+        # Quote URLs, JSON arrays, values with spaces/hashes/equals
+        if re.search(r'[\s:/?=&#\[\]{}]', val):
+            escaped = val.replace('"', '\\"')
+            return f'"{escaped}"'
+        return val
+
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    updated_keys: set = set()
+    new_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                val = updates[key]
+                str_val = str(val) if val is not None else ""
+                new_lines.append(f"{key}={_format_value(str_val)}")
+                updated_keys.add(key)
+                continue
+        new_lines.append(line)
+
+    # Append any new keys not already in the file
+    for key, val in updates.items():
+        if key not in updated_keys:
+            str_val = str(val) if val is not None else ""
+            new_lines.append(f"{key}={_format_value(str_val)}")
+
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    return True

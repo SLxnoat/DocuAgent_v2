@@ -25,14 +25,18 @@ class LLMFactory:
         logger.info(f"Initializing LLM Provider: {provider} with Model: {target_model}")
 
         if provider in ("ollama_cloud", "ollama_local", "ollama"):
-            # Supports both Ollama Cloud endpoints and local Ollama server
+            # Ensure base_url points to an actual Ollama daemon (127.0.0.1:11434 if ollama.com website was configured)
+            base_url = settings.OLLAMA_BASE_URL
+            if "ollama.com" in base_url.lower():
+                base_url = "http://127.0.0.1:11434"
+
             headers = {}
             if settings.OLLAMA_API_KEY:
                 headers["Authorization"] = f"Bearer {settings.OLLAMA_API_KEY}"
 
             return ChatOllama(
                 model=target_model,
-                base_url=settings.OLLAMA_BASE_URL,
+                base_url=base_url,
                 temperature=temperature,
                 client_kwargs={"headers": headers} if headers else {},
             )

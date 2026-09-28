@@ -14,11 +14,17 @@ class ScreencastStreamer:
         self.page = page
         self.cdp_session = cdp_session
         self.is_streaming = False
-        self._frame_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        self._frame_callbacks: list[Callable] = []
 
-    def on_frame(self, callback: Callable[[str, Dict[str, Any]], None]):
-        """Register a callback when a new screencast frame is emitted from CDP."""
-        self._frame_callback = callback
+    def on_frame(self, callback: Callable):
+        """Register a callback (sync or async) when a new screencast frame is emitted from CDP."""
+        if callback not in self._frame_callbacks:
+            self._frame_callbacks.append(callback)
+
+    def remove_frame_callback(self, callback: Callable):
+        """Unregister a frame callback."""
+        if callback in self._frame_callbacks:
+            self._frame_callbacks.remove(callback)
 
     async def start(self):
         """Start CDP screencast stream."""
@@ -37,8 +43,17 @@ class ScreencastStreamer:
                 base64_data = params.get("data")
                 metadata = params.get("metadata", {})
                 
-                if self._frame_callback and base64_data:
-                    self._frame_callback(base64_data, metadata)
+                if base64_data and self._frame_callbacks:
+                    for cb in list(self._frame_callbacks):
+                        try:
+                            if asyncio.iscoroutinefunction(cb):
+                                await cb(base64_data, metadata)
+                            else:
+                                res = cb(base64_data, metadata)
+                                if asyncio.iscoroutine(res):
+                                    await res
+                        except Exception as cb_err:
+                            logger.debug(f"Frame callback error: {cb_err}")
             except Exception as e:
                 logger.debug(f"Error handling screencast frame: {e}")
 
@@ -67,19 +82,35 @@ class ScreencastStreamer:
         except Exception as e:
             logger.warning(f"Failed to cleanly stop screencast: {e}")
 
-    async def dispatch_mouse_event(self, event_type: str, x: int, y: int, button: str = "left", click_count: int = 1):
-        """Forward user mouse events from React canvas into Playwright page."""
+    async def dispatch_mouse_event(
+        self,
+        event_type: str,
+        x: int,
+        y: int,
+        button: str = "left",
+        click_count: int = 1,
+        delta_x: float = 0.0,
+        delta_y: float = 0.0,
+    ):
+        """Forward user mouse and wheel events from React canvas into Playwright page."""
         try:
             if event_type == "mousePressed":
+                await self.page.mouse.move(x, y)
                 await self.page.mouse.down(button=button)
             elif event_type == "mouseReleased":
+                await self.page.mouse.move(x, y)
                 await self.page.mouse.up(button=button)
             elif event_type == "mouseMoved":
                 await self.page.mouse.move(x, y)
             elif event_type == "click":
                 await self.page.mouse.click(x, y, button=button, click_count=click_count)
+            elif event_type == "dblclick":
+                await self.page.mouse.dblclick(x, y, button=button)
+            elif event_type == "wheel":
+                await self.page.mouse.move(x, y)
+                await self.page.mouse.wheel(delta_x=delta_x, delta_y=delta_y)
         except Exception as e:
-            logger.debug(f"Failed to dispatch mouse event: {e}")
+            logger.debug(f"Failed to dispatch mouse event [{event_type}]: {e}")
 
     async def dispatch_keyboard_event(self, event_type: str, key: str, text: Optional[str] = None):
         """Forward user keyboard events from React canvas into Playwright page."""
@@ -88,7 +119,38 @@ class ScreencastStreamer:
                 await self.page.keyboard.down(key)
             elif event_type == "keyUp":
                 await self.page.keyboard.up(key)
+            elif event_type == "press" and key:
+                await self.page.keyboard.press(key)
             elif event_type == "type" and text:
                 await self.page.keyboard.type(text)
         except Exception as e:
-            logger.debug(f"Failed to dispatch keyboard event: {e}")
+            logger.debug(f"Failed to dispatch keyboard event [{event_type}]: {e}")
+
+    async def navigate(self, url: str):
+        """Navigate page to a new URL."""
+        try:
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning(f"Failed to navigate page: {e}")
+
+    async def reload(self):
+        """Reload page."""
+        try:
+            await self.page.reload(wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning(f"Failed to reload page: {e}")
+
+    async def go_back(self):
+        """Navigate back."""
+        try:
+            await self.page.go_back(wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            logger.warning(f"Failed to go back: {e}")
+
+    async def go_forward(self):
+        """Navigate forward."""
+        try:
+            await self.page.go_forward(wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            logger.warning(f"Failed to go forward: {e}")
+

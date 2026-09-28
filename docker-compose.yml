@@ -1,12 +1,14 @@
-version: '3.8'
+# DocuAgent AI — Docker Compose
+# Run: docker compose up --build
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  # ----------------------------------------------------------------------------
-  # Redis Cache & Message Broker
-  # ----------------------------------------------------------------------------
+
+  # ── Redis: Cache & Celery broker ───────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: docuagent_redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -18,79 +20,107 @@ services:
       timeout: 3s
       retries: 5
 
-  # ----------------------------------------------------------------------------
-  # FastAPI Orchestrator Backend
-  # ----------------------------------------------------------------------------
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: docuagent_backend
+    env_file:
+      - .env                          # Load from root .env (settings synced via UI)
     environment:
       - ENVIRONMENT=production
+      - BACKEND_PORT=8030
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_cloud}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://ollama.com/api}
+      # Ollama: point to host machine's Ollama daemon (cloud models also run here)
+      # Override via .env: OLLAMA_BASE_URL=http://host-gateway:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host-gateway:11434}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - DEFAULT_MODEL=${DEFAULT_MODEL:-llama3.3:70b}
-      - DATABASE_URL=sqlite+aiosqlite:///app/data/docuagent.db
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_local}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-qwen2.5:7b}
+      - FAST_MODEL=${FAST_MODEL:-llama3.1:8b}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/docuagent.db
       - STORAGE_DIR=/app/data/storage
       - SCREENSHOTS_DIR=/app/data/storage/screenshots
       - EXPORTS_DIR=/app/data/storage/exports
     ports:
-      - "8000:8000"
+      - "8030:8030"
     volumes:
       - docuagent_data:/app/data
+    extra_hosts:
+      - "host-gateway:host-gateway"   # Allows container to reach host Ollama daemon
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8030/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 25s
+      retries: 3
 
-  # ----------------------------------------------------------------------------
-  # Celery Background Worker (Pipeline & PDF Export)
-  # ----------------------------------------------------------------------------
+  # ── Celery Worker: async pipelines & PDF export ────────────────────────────
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: docuagent_worker
-    command: celery -A app.workers.celery_app.celery worker --loglevel=info --concurrency=2
+    command: >
+      celery -A app.workers.celery_app.celery worker
+      --loglevel=info
+      --concurrency=2
+      --queues=default,export
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_cloud}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://ollama.com/api}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host-gateway:11434}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - DEFAULT_MODEL=${DEFAULT_MODEL:-llama3.3:70b}
-      - DATABASE_URL=sqlite+aiosqlite:///app/data/docuagent.db
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama_local}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-qwen2.5:7b}
+      - FAST_MODEL=${FAST_MODEL:-llama3.1:8b}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/docuagent.db
       - STORAGE_DIR=/app/data/storage
       - SCREENSHOTS_DIR=/app/data/storage/screenshots
       - EXPORTS_DIR=/app/data/storage/exports
     volumes:
       - docuagent_data:/app/data
+    extra_hosts:
+      - "host-gateway:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
-  # ----------------------------------------------------------------------------
-  # React Frontend (SPA)
-  # ----------------------------------------------------------------------------
+  # ── React Frontend (nginx static serve + reverse proxy) ────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: docuagent_frontend
     ports:
-      - "5173:5173"
+      - "80:80"                       # Expose on port 80 (production)
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
 
 volumes:
   redis_data:
+    driver: local
   docuagent_data:
+    driver: local

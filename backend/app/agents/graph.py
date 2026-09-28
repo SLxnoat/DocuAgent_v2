@@ -1,53 +1,71 @@
-"""LangGraph StateGraph construction and compilation for DocuAgent."""
+"""LangGraph Dynamic Multi-Agent StateGraph with Autonomous Supervisor Orchestration."""
 
+from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from app.agents.state import DocuAgentState
+from app.agents.nodes.supervisor import supervisor_node
 from app.agents.nodes.intent_parser import intent_parser_node
+from app.agents.nodes.screenshot_agent import screenshot_agent_node
 from app.agents.nodes.technical_writer import technical_writer_node
 from app.agents.nodes.quality_reviewer import quality_reviewer_node
 from app.agents.nodes.chat_refiner import chat_refiner_node
 from app.core.logging import logger
 
 
-def should_continue_review(state: DocuAgentState) -> str:
-    """Conditional router for quality review loop."""
-    is_approved = state.get("is_approved", True)
-    iteration = state.get("review_iteration", 0)
-    
-    # If not approved and under max attempts (1 auto-remediation attempt), cycle back
-    if not is_approved and iteration < 2:
-        logger.info("Quality review requested revision. Routing back to Technical Writer.")
+def route_supervisor_decision(state: DocuAgentState) -> str:
+    """Dynamic router mapping the Supervisor Agent's decision to the next node or termination."""
+    next_agent = state.get("next_agent", "FINISH")
+    logger.info(f"Dynamic Agent Router dispatched target: [{next_agent}]")
+
+    if next_agent == "intent_parser":
+        return "intent_parser"
+    elif next_agent == "screenshot_agent":
+        return "screenshot_agent"
+    elif next_agent == "technical_writer":
         return "technical_writer"
+    elif next_agent == "quality_reviewer":
+        return "quality_reviewer"
+    elif next_agent == "chat_refiner":
+        return "chat_refiner"
+    
     return END
 
 
 def create_documentation_graph() -> StateGraph:
-    """Build and compile the multi-agent LangGraph workflow."""
+    """Build and compile the dynamic multi-agent LangGraph network."""
     workflow = StateGraph(DocuAgentState)
 
     # Register Nodes
+    workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("intent_parser", intent_parser_node)
+    workflow.add_node("screenshot_agent", screenshot_agent_node)
     workflow.add_node("technical_writer", technical_writer_node)
     workflow.add_node("quality_reviewer", quality_reviewer_node)
     workflow.add_node("chat_refiner", chat_refiner_node)
 
-    # Pipeline Flow
-    workflow.add_edge(START, "intent_parser")
-    workflow.add_edge("intent_parser", "technical_writer")
-    workflow.add_edge("technical_writer", "quality_reviewer")
-    
-    # Conditional edge from Quality Reviewer
+    # 1. Flow starts at the Dynamic Supervisor
+    workflow.add_edge(START, "supervisor")
+
+    # 2. Dynamic conditional dispatch from Supervisor to chosen agent or END
     workflow.add_conditional_edges(
-        "quality_reviewer",
-        should_continue_review,
+        "supervisor",
+        route_supervisor_decision,
         {
+            "intent_parser": "intent_parser",
+            "screenshot_agent": "screenshot_agent",
             "technical_writer": "technical_writer",
+            "quality_reviewer": "quality_reviewer",
+            "chat_refiner": "chat_refiner",
             END: END,
         },
     )
 
-    # Refiner node loop
-    workflow.add_edge("chat_refiner", "quality_reviewer")
+    # 3. All agents report back to Supervisor for dynamic evaluation of next step
+    workflow.add_edge("intent_parser", "supervisor")
+    workflow.add_edge("screenshot_agent", "supervisor")
+    workflow.add_edge("technical_writer", "supervisor")
+    workflow.add_edge("quality_reviewer", "supervisor")
+    workflow.add_edge("chat_refiner", "supervisor")
 
     return workflow
 
@@ -56,10 +74,10 @@ _compiled_graph = None
 
 
 def get_compiled_graph():
-    """Retrieve compiled LangGraph singleton instance."""
+    """Retrieve compiled dynamic LangGraph singleton instance."""
     global _compiled_graph
     if _compiled_graph is None:
         graph = create_documentation_graph()
         _compiled_graph = graph.compile()
-        logger.info("Compiled LangGraph documentation pipeline.")
+        logger.info("Compiled Dynamic Multi-Agent LangGraph Network.")
     return _compiled_graph

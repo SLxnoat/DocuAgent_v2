@@ -5,16 +5,22 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatRefineRequest, ChatRefineResponse
 from app.api.v1.endpoints.documents import _documents_db
-from app.agents.nodes.chat_refiner import chat_refiner_node
+from app.agents.graph import get_compiled_graph
 from app.agents.state import DocuAgentState
 from app.core.logging import logger
+from app.core.security import sanitize_identifier, SecurityValidationError
 
 router = APIRouter()
 
 
 @router.post("/refine", response_model=ChatRefineResponse)
 async def refine_document_section(payload: ChatRefineRequest):
-    """Refine or modify specific document sections based on user feedback using Chat Refiner Agent."""
+    """Refine or modify specific document sections based on user feedback using Dynamic Multi-Agent supervisor."""
+    try:
+        payload.document_id = sanitize_identifier(payload.document_id, "document_id")
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     if payload.document_id not in _documents_db:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -24,6 +30,10 @@ async def refine_document_section(payload: ChatRefineRequest):
         "session_id": doc.session_id,
         "target_url": "",
         "raw_action_traces": [],
+        "next_agent": None,
+        "supervisor_directives": None,
+        "iteration_count": 0,
+        "agent_activity_log": [],
         "workflow_intent": doc.title,
         "grouped_steps": None,
         "synthesized_steps": [s.model_dump() if hasattr(s, "model_dump") else s for s in doc.steps],
@@ -41,13 +51,16 @@ async def refine_document_section(payload: ChatRefineRequest):
     }
 
     try:
-        updated_state = await chat_refiner_node(state_input)
+        graph = get_compiled_graph()
+        updated_state = await graph.ainvoke(state_input)
         reply = updated_state.get("metadata", {}).get("last_refinement_reply", "Applied changes successfully.")
         modified_steps = updated_state.get("metadata", {}).get("modified_steps", [])
         
         # Update in-memory document
         doc.steps = updated_state.get("synthesized_steps", doc.steps)
         doc.raw_markdown = updated_state.get("raw_markdown", doc.raw_markdown)
+        if updated_state.get("quality_report"):
+            doc.quality_report = updated_state.get("quality_report")
         doc.version += 1
         doc.updated_at = datetime.utcnow()
 

@@ -10,6 +10,7 @@ from app.engine.browser_manager import get_browser_manager
 from app.agents.graph import get_compiled_graph
 from app.agents.state import DocuAgentState
 from app.core.logging import logger
+from app.core.security import validate_target_url, sanitize_identifier, SecurityValidationError
 
 router = APIRouter()
 
@@ -21,6 +22,12 @@ _action_store: dict[str, list[ActionTrace]] = {}
 @router.post("/", response_model=SessionResponse, status_code=201)
 async def create_and_start_session(payload: SessionCreate):
     """Initialize a new browser recording session and open target URL."""
+    try:
+        validated_url = validate_target_url(payload.target_url)
+        payload.target_url = validated_url
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     session_id = f"sess_{uuid.uuid4().hex[:10]}"
     browser_manager = get_browser_manager()
 
@@ -50,6 +57,11 @@ async def create_and_start_session(payload: SessionCreate):
 @router.get("/{session_id}", response_model=SessionResponse)
 async def get_session_status(session_id: str):
     """Fetch status and current statistics of a recording session."""
+    try:
+        session_id = sanitize_identifier(session_id, "session_id")
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     if session_id not in _sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
     

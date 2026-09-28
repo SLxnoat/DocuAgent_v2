@@ -12,6 +12,8 @@ greenlet>=3.1.0
 
 # Multi-Agent & LLM Stack
 langgraph>=0.2.45
+crewai>=0.80.0
+crewai-tools>=0.14.0
 langchain>=0.3.7
 langchain-core>=0.3.15
 langchain-community>=0.3.7

@@ -1,5 +1,6 @@
 """Action Tracer for managing session action histories and screenshot persistence."""
 
+import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -8,22 +9,29 @@ from playwright.async_api import Page
 from app.schemas.action_trace import ActionTrace, DOMElementInfo, ActionType
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.security import sanitize_identifier, mask_sensitive_value
 
 
 class ActionTracer:
     """Accumulates user interaction events and automatically captures visual snapshots."""
 
     def __init__(self, session_id: str, page: Page):
-        self.session_id = session_id
+        self.session_id = sanitize_identifier(session_id, "session_id")
         self.page = page
         self.traces: List[ActionTrace] = []
-        self._action_callback: Optional[Callable[[ActionTrace], None]] = None
-        self.session_dir = settings.SCREENSHOTS_DIR / session_id
+        self._action_callbacks: list[Callable] = []
+        self.session_dir = settings.SCREENSHOTS_DIR / self.session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
-    def on_action_recorded(self, callback: Callable[[ActionTrace], None]):
+    def on_action_recorded(self, callback: Callable):
         """Register a callback when an action trace is captured."""
-        self._action_callback = callback
+        if callback not in self._action_callbacks:
+            self._action_callbacks.append(callback)
+
+    def remove_action_callback(self, callback: Callable):
+        """Unregister an action callback."""
+        if callback in self._action_callbacks:
+            self._action_callbacks.remove(callback)
 
     async def record_action(
         self,
@@ -37,10 +45,15 @@ class ActionTracer:
         action_id = f"act_{uuid.uuid4().hex[:8]}"
         timestamp = datetime.utcnow()
 
-        # Parse target element info if present
+        # Parse target element info if present and mask secrets
         dom_info = None
         if target_data:
             try:
+                # Mask secret attributes if present
+                field_name = (target_data.get("attributes") or {}).get("name") or target_data.get("element_id")
+                input_type_val = target_data.get("input_type")
+                if input_value:
+                    input_value = mask_sensitive_value(field_name, input_type_val, input_value)
                 dom_info = DOMElementInfo(**target_data)
             except Exception as e:
                 logger.warning(f"Failed to parse DOMElementInfo: {e}")
@@ -85,8 +98,17 @@ class ActionTracer:
         self.traces.append(trace)
         logger.info(f"Recorded action #{seq_num}: [{trace.action_type.value}] on {page_url}")
 
-        if self._action_callback:
-            self._action_callback(trace)
+        if self._action_callbacks:
+            for cb in list(self._action_callbacks):
+                try:
+                    if asyncio.iscoroutinefunction(cb):
+                        await cb(trace)
+                    else:
+                        res = cb(trace)
+                        if asyncio.iscoroutine(res):
+                            await res
+                except Exception as cb_err:
+                    logger.debug(f"Action callback error: {cb_err}")
 
         return trace
 

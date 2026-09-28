@@ -1,31 +1,60 @@
-# LangGraph Multi-Agent Pipeline & Flow
+# Dynamic Multi-Agent Autonomous Network (LangGraph)
 
-The DocuAgent multi-agent workflow operates as a state graph compiled with **LangGraph**:
+Unlike rigid, static sequential pipelines, **DocuAgent AI** employs an autonomous, dynamic **Supervisor-Worker StateGraph** pattern. Agents interact dynamically through intelligent routing, self-correcting feedback loops, and contextual memory.
+
+---
+
+## 🧭 Dynamic Multi-Agent Architecture
 
 ```mermaid
-stateDiagram-v2
-    [*] --> IntentParser
-    IntentParser --> TechnicalWriter : Grouped Steps
-    TechnicalWriter --> QualityReviewer : Synthesized Manual
-    QualityReviewer --> TechnicalWriter : Score < 80% (Auto-remediation)
-    QualityReviewer --> Complete : Approved
-    Complete --> ChatRefiner : HITL User Feedback
-    ChatRefiner --> QualityReviewer : Updated Sections
-    Complete --> [*]
+flowchart TD
+    START([Start / User Input]) --> SUP{Dynamic Supervisor Agent}
+
+    subgraph SpecialistAgents["Specialized Worker Agents"]
+        IP["1. Intent Parser Agent\n(Semantic Task Grouping & De-noising)"]
+        TW["2. Technical Writer Agent\n(Instruction & Callout Synthesis)"]
+        QR["3. Quality Reviewer Agent\n(Automated QA, Scoring & Critique)"]
+        CR["4. Chat Refiner Agent\n(HITL Granular Section Editing)"]
+    end
+
+    SUP -->|"Directives: Parse Raw Telemetry"| IP
+    SUP -->|"Directives: Synthesize Initial Draft / Apply Revisions"| TW
+    SUP -->|"Directives: Validate Completeness & Continuity"| QR
+    SUP -->|"Directives: Execute Targeted HITL Edits"| CR
+
+    IP -->|"Grouped Steps & Activity Log"| SUP
+    TW -->|"Synthesized Manual & Steps"| SUP
+    QR -->|"Quality Critique & Actionable Suggestions"| SUP
+    CR -->|"Modified Section Diffs"| SUP
+
+    SUP -->|"Criteria Met (Score >= 85) / Goal Achieved"| FINISH([Completed Manual & Export])
 ```
 
-## Agent Roles & Responsibilities
+---
 
-1. **Intent Parser Agent**:
-   - Analyzes raw DOM clicks, keystrokes, form submissions, and page navigations.
-   - De-noises micro-interactions and groups related actions into cohesive macro procedures.
+## 🤖 Specialized Agent Roles
 
-2. **Technical Writer Agent**:
-   - Synthesizes procedural walkthroughs with prerequisites, imperative instructions, and callouts (Tip/Warning/Note).
-   - Generates formatted Markdown manuals embedded with highlighted screenshot links.
+### 1. Dynamic Supervisor / Orchestrator Agent (`supervisor_node`)
+- **Role**: Central reasoning orchestrator evaluating real-time graph state, user intent, critique reports, and iteration budgets.
+- **Autonomous Decision Loop**:
+  - Unparsed traces $\rightarrow$ Dispatches `intent_parser`.
+  - Grouped steps ready $\rightarrow$ Dispatches `technical_writer` with initial synthesis directives.
+  - Draft generated $\rightarrow$ Dispatches `quality_reviewer` for structural inspection and scoring.
+  - Review score $< 85$ $\rightarrow$ Dynamically re-routes to `technical_writer` with targeted feedback and remediation directives.
+  - Active user instruction $\rightarrow$ Dispatches `chat_refiner`, followed by dynamic verification.
+  - Quality thresholds satisfied (Score $\ge 85$) or maximum iterations reached $\rightarrow$ Routes to `FINISH`.
 
-3. **Quality Reviewer Agent**:
-   - Performs automated structural critique, scores clarity and completeness (0-100), and validates step numbering continuity.
+### 2. Intent Parser Agent (`intent_parser_node`)
+- Groups micro-actions into logical macro procedural tasks.
+- Isolates untrusted DOM text to prevent indirect prompt injections.
 
-4. **Chat Refiner Agent**:
-   - Implements Human-in-the-Loop adjustments, re-evaluating only targeted steps without invalidating the rest of the documentation.
+### 3. Technical Writer Agent (`technical_writer_node`)
+- Dynamically responds to supervisor directives (e.g. "Add warning callout to Step 2", "Expand executive summary").
+- Synthesizes structured steps, prerequisites, callout blocks, and highlighted screenshot embeds.
+
+### 4. Quality Reviewer Agent (`quality_reviewer_node`)
+- Evaluates documentation against completeness, clarity, step-number ordering, and visual anchors.
+- Emits actionable critique reports and quality scores $(0-100\%)$.
+
+### 5. Chat Refiner Agent (`chat_refiner_node`)
+- Executes Human-in-the-Loop natural language instructions for granular section modifications.

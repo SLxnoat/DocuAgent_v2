@@ -1,6 +1,7 @@
 """Chat Refiner Node — applies targeted HITL human edits to specific sections."""
 
 import json
+from datetime import datetime
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.state import DocuAgentState
 from app.agents.llm_factory import LLMFactory
@@ -38,14 +39,30 @@ async def chat_refiner_node(state: DocuAgentState) -> dict:
             content = content.replace("```", "").strip()
 
         parsed = json.loads(content)
+        reply = parsed.get("reply_message", "Updated documentation based on feedback.")
+        modified = parsed.get("modified_step_numbers", [])
+        updated_steps = parsed.get("updated_steps", current_steps)
+        updated_md = parsed.get("updated_markdown", current_markdown)
+
         return {
-            "synthesized_steps": parsed.get("updated_steps", current_steps),
-            "raw_markdown": parsed.get("updated_markdown", current_markdown),
+            "synthesized_steps": updated_steps,
+            "raw_markdown": updated_md,
             "metadata": {
                 **state.get("metadata", {}),
-                "last_refinement_reply": parsed.get("reply_message", "Updated documentation based on feedback."),
-                "modified_steps": parsed.get("modified_step_numbers", []),
+                "last_refinement_reply": reply,
+                "modified_steps": modified,
+                "refinement_handled": True,
             },
+            "agent_activity_log": [
+                *state.get("agent_activity_log", []),
+                {
+                    "agent": "chat_refiner",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "instruction": user_instruction,
+                    "reply": reply,
+                    "modified_steps": modified,
+                },
+            ],
         }
     except Exception as e:
         logger.error(f"Chat Refiner error: {e}")
@@ -53,5 +70,15 @@ async def chat_refiner_node(state: DocuAgentState) -> dict:
             "metadata": {
                 **state.get("metadata", {}),
                 "last_refinement_reply": f"Could not apply refinement automatically: {str(e)}",
-            }
+                "refinement_handled": True,
+            },
+            "agent_activity_log": [
+                *state.get("agent_activity_log", []),
+                {
+                    "agent": "chat_refiner",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": "error",
+                    "error": str(e),
+                },
+            ],
         }

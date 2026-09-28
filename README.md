@@ -143,7 +143,7 @@ pip install -r requirements.txt
 playwright install chromium
 
 # Launch FastAPI Server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8030
 ```
 
 ### 4. Celery Worker (in separate terminal)
